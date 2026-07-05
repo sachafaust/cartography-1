@@ -63,6 +63,9 @@ class Config:
         many findings are fetched, processed and cleaned up at a time. Default is 1000. Optional.
     :type analysis_job_directory: str
     :param analysis_job_directory: Path to a directory tree containing analysis jobs to run. Optional.
+    :type cleanup_batch_size: int
+    :param cleanup_batch_size: Number of items that iterative cleanup jobs delete per transaction. Defaults to 1000
+        when not set. Lower this if cleanup jobs hit Neo4j's transaction memory limit. Optional.
     :type oci_sync_all_profiles: bool
     :param oci_sync_all_profiles: whether OCI will sync non-default profiles in OCI_CONFIG_FILE. Optional.
     :type okta_org_id: str
@@ -242,6 +245,7 @@ class Config:
         aws_requested_syncs=None,
         aws_guardduty_severity_threshold=None,
         analysis_job_directory=None,
+        cleanup_batch_size=None,
         oci_sync_all_profiles=None,
         okta_org_id=None,
         okta_api_key=None,
@@ -350,6 +354,7 @@ class Config:
         self.aws_requested_syncs = aws_requested_syncs
         self.aws_guardduty_severity_threshold = aws_guardduty_severity_threshold
         self.analysis_job_directory = analysis_job_directory
+        self.cleanup_batch_size = cleanup_batch_size
         self.oci_sync_all_profiles = oci_sync_all_profiles
         self.okta_org_id = okta_org_id
         self.okta_api_key = okta_api_key

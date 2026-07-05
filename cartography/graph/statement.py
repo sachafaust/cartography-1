@@ -8,11 +8,20 @@ from typing import Optional
 from typing import Union
 
 import neo4j
+import neo4j.exceptions
 
 from cartography.stats import get_stats_client
 
 logger = logging.getLogger(__name__)
 stat_handler = get_stats_client(__name__)
+
+# When an iterative statement blows Neo4j's transaction memory limit, we halve its batch size and
+# retry rather than failing the job. We stop halving at this floor: batches this small have always
+# been safe (it was the global default for years), so an OOM at the floor indicates a problem that
+# smaller batches cannot fix.
+MIN_ITERATIONSIZE_ON_MEMORY_ERROR = 100
+
+_MEMORY_POOL_OOM_CODE = "Neo.TransientError.General.MemoryPoolOutOfMemoryError"
 
 
 class GraphStatementJSONEncoder(json.JSONEncoder):
@@ -129,13 +138,34 @@ class GraphStatement:
         Iterative statement execution.
 
         Expects the query to return the total number of records updated.
+
+        If an iteration exceeds Neo4j's transaction memory limit (which can happen when deleting
+        nodes with very many relationships, since DETACH DELETE holds every relationship deletion
+        in one transaction), the batch size is halved and the statement retried instead of failing
+        the job. The reduced batch size sticks for the remaining iterations of this statement.
         """
-        self.parameters["LIMIT_SIZE"] = self.iterationsize
+        limit_size = self.iterationsize
+        self.parameters["LIMIT_SIZE"] = limit_size
+        # Never lower the batch below the floor, but respect an explicitly smaller iterationsize.
+        min_limit = min(MIN_ITERATIONSIZE_ON_MEMORY_ERROR, max(self.iterationsize, 1))
 
         while True:
-            summary: neo4j.ResultSummary = session.write_transaction(
-                self._run_noniterative
-            )
+            try:
+                summary: neo4j.ResultSummary = session.write_transaction(
+                    self._run_noniterative
+                )
+            except neo4j.exceptions.TransientError as e:
+                if e.code == _MEMORY_POOL_OOM_CODE and limit_size > min_limit:
+                    limit_size = max(limit_size // 2, min_limit)
+                    self.parameters["LIMIT_SIZE"] = limit_size
+                    logger.warning(
+                        f"Statement in job {self.parent_job_name} hit Neo4j's transaction memory limit; "
+                        f"retrying with a smaller batch (LIMIT_SIZE={limit_size}). This typically means the "
+                        f"nodes being deleted have very many relationships. If this repeats every sync, "
+                        f"consider lowering the cleanup batch size (e.g. via --cleanup-batch-size)."
+                    )
+                    continue
+                raise
 
             if not summary.counters.contains_updates:
                 break

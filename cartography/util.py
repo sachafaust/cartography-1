@@ -28,6 +28,7 @@ import neo4j
 from botocore.exceptions import EndpointConnectionError
 from botocore.parsers import ResponseParserError
 
+from cartography.graph.job import get_configured_cleanup_batch_size
 from cartography.graph.job import GraphJob
 from cartography.graph.statement import get_job_shortname
 from cartography.stats import get_stats_client
@@ -140,15 +141,20 @@ def run_cleanup_job(
     common_job_parameters: Dict,
     package: str = "cartography.data.jobs.cleanup",
 ) -> None:
-    GraphJob.run_from_json(
-        neo4j_session,
+    job = GraphJob.from_json(
         read_text(
             package,
             filename,
         ),
-        common_job_parameters,
         get_job_shortname(filename),
     )
+    # Packaged cleanup jobs carry a baked-in iterationsize; an operator-configured cleanup batch
+    # size (--cleanup-batch-size) takes precedence over it.
+    configured_batch_size = get_configured_cleanup_batch_size()
+    if configured_batch_size is not None:
+        job.set_iterationsize(configured_batch_size)
+    job.merge_parameters(common_job_parameters or {})
+    job.run(neo4j_session)
 
 
 def merge_module_sync_metadata(
