@@ -413,15 +413,13 @@ def test_permission_set_to_role_us_east_1(neo4j_session):
         "us-east-1",
     )
 
-    # Transform permission sets to add RoleHint
+    # Transform permission sets to add the role name prefix + path
     permission_sets = transform_permission_sets(permission_sets, "us-east-1")
 
-    # Verify RoleHint was generated correctly (without region)
+    # Verify the role match fields were generated correctly (path without region)
     assert len(permission_sets) == 1
-    assert (
-        permission_sets[0]["RoleHint"]
-        == ":role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_AdministratorAccess"
-    )
+    assert permission_sets[0]["RoleNamePrefix"] == "AWSReservedSSO_AdministratorAccess_"
+    assert permission_sets[0]["RolePath"] == "/aws-reserved/sso.amazonaws.com/"
 
     # Load permission sets - should create ASSIGNED_TO_ROLE relationship
     load_permission_sets(
@@ -501,14 +499,14 @@ def test_permission_set_to_role_us_west_2(neo4j_session):
         "us-west-2",
     )
 
-    # Transform permission sets to add RoleHint
+    # Transform permission sets to add the role name prefix + path
     permission_sets = transform_permission_sets(permission_sets, "us-west-2")
 
-    # Verify RoleHint was generated correctly (with region)
+    # Verify the role match fields were generated correctly (path with region)
     assert len(permission_sets) == 1
+    assert permission_sets[0]["RoleNamePrefix"] == "AWSReservedSSO_AdministratorAccess_"
     assert (
-        permission_sets[0]["RoleHint"]
-        == ":role/aws-reserved/sso.amazonaws.com/us-west-2/AWSReservedSSO_AdministratorAccess"
+        permission_sets[0]["RolePath"] == "/aws-reserved/sso.amazonaws.com/us-west-2/"
     )
 
     # Load permission sets - should create ASSIGNED_TO_ROLE relationship

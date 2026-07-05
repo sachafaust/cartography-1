@@ -433,6 +433,8 @@ def _build_where_clause_for_rel_match(
     fuzzy_and_ignorecase_match = Template(
         "toLower($node_var.$key) CONTAINS toLower($prop_ref)"
     )
+    # Index-backed prefix match (NodeIndexSeekByRange); prefer this over CONTAINS when possible
+    starts_with_match = Template("$node_var.$key STARTS WITH $prop_ref")
     # This assumes that item.$prop_ref points to a list available on the data object
     one_to_many_match = Template("$node_var.$key IN $prop_ref")
 
@@ -448,6 +450,10 @@ def _build_where_clause_for_rel_match(
             )
         elif prop_ref.fuzzy_and_ignore_case:
             prop_line = fuzzy_and_ignorecase_match.safe_substitute(
+                node_var=node_var, key=key, prop_ref=prop_ref
+            )
+        elif prop_ref.starts_with:
+            prop_line = starts_with_match.safe_substitute(
                 node_var=node_var, key=key, prop_ref=prop_ref
             )
         elif prop_ref.one_to_many:

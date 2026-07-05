@@ -1,6 +1,11 @@
 # Proposal: Top 5 ingestion-speed optimizations
 
-**Status:** Proposal (no product code changed yet)
+**Status:** Findings 2, 3, and 4 are implemented on this branch (the three lowest-risk items):
+- Finding 2 — `ensure_indexes()` is now memoized per schema class per process (`cartography/client/core/tx.py`); `clear_ensure_indexes_cache()` resets it.
+- Finding 3 — cleanup `iterationsize` default raised from 100 to 1000 (`cartography/graph/job.py` and all `cartography/data/jobs/cleanup/*.json`).
+- Finding 4 — the Identity Center role matcher now uses an index-backed `STARTS WITH` on `AWSRole.name` plus an exact match on `AWSRole.path` via the new `PropertyRef(starts_with=True)` option, replacing the non-indexable `CONTAINS` on `arn`. Verified plan: `NodeIndexSeekByRange`; measured 0.04 s vs 27 s for 50k roles x 1k permission sets on the exact generated clause shape (~670x).
+
+Findings 1 and 5 remain proposals.
 **Scope:** Code-level optimizations only — no architectural changes to the sync model, data model, or query-generation design.
 **Grounding:** Every claim below was validated against a live Neo4j 5.15 community instance (the same image as `docker-compose.yml`) using the benchmark harness in [`benchmarks/`](benchmarks/), which exercises the *real* cartography code paths (`load()`, `GraphJob.from_node_schema()`, `run_write_query()`, the generated ingestion/cleanup Cypher) with the real `EC2InstanceSchema` data model. A full instrumented run of the repo's own `demo` sync (22 intel modules) was used to measure how the ingestion machinery behaves in an end-to-end sync.
 

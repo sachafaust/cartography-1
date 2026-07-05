@@ -51,8 +51,15 @@ class PermissionSetToAWSRoleRelRelProperties(CartographyRelProperties):
 @dataclass(frozen=True)
 class PermissionSetToAWSRoleRel(CartographyRelSchema):
     target_node_label: str = "AWSRole"
+    # SSO-provisioned roles are always named `AWSReservedSSO_{PermissionSetName}_{random_suffix}` and live at IAM
+    # path `/aws-reserved/sso.amazonaws.com/` (with a `{region}/` suffix for non-us-east-1 instances) in every
+    # account the permission set is provisioned to. Matching on an indexed name prefix plus exact path is
+    # equivalent to a CONTAINS match on the arn but is index-backed instead of scanning every AWSRole per row.
     target_node_matcher: TargetNodeMatcher = make_target_node_matcher(
-        {"arn": PropertyRef("RoleHint", fuzzy_and_ignore_case=True)},
+        {
+            "name": PropertyRef("RoleNamePrefix", starts_with=True),
+            "path": PropertyRef("RolePath"),
+        },
     )
     direction: LinkDirection = LinkDirection.OUTWARD
     rel_label: str = "ASSIGNED_TO_ROLE"

@@ -16,6 +16,7 @@ class PropertyRef:
         ignore_case=False,
         fuzzy_and_ignore_case=False,
         one_to_many=False,
+        starts_with=False,
     ):
         """
         :param name: The name of the property
@@ -64,6 +65,15 @@ class PropertyRef:
             This means that as we create AWSInstanceProfile nodes, we will search for AWSRoles to attach to, and we do
             this by checking if each role's `arn` field is in the `Roles` list of the data dict.
         Note that one_to_many has no effect on matchlinks.
+        :param starts_with: If True, performs a prefix match when comparing the value of this property using the
+        `STARTS WITH` operator. Defaults to False. This only has effect as part of a TargetNodeMatcher and is not
+        supported for the sub resource relationship.
+            Unlike `fuzzy_and_ignore_case` (which uses `CONTAINS` and forces Neo4j to scan every node with the target
+            label for every item being loaded), `STARTS WITH` is index-backed (NodeIndexSeekByRange), so prefer this
+            option whenever the value you match on is a known prefix of the target property.
+            Example: AWS IAM Identity Center provisions one IAM role per permission set per account, always named
+            `AWSReservedSSO_{PermissionSetName}_{random_suffix}`. To attach a permission set to its roles, match the
+            role's `name` with starts_with=True on the value `AWSReservedSSO_{PermissionSetName}_`.
         """
         self.name = name
         self.set_in_kwargs = set_in_kwargs
@@ -71,6 +81,7 @@ class PropertyRef:
         self.ignore_case = ignore_case
         self.fuzzy_and_ignore_case = fuzzy_and_ignore_case
         self.one_to_many = one_to_many
+        self.starts_with = starts_with
 
         if self.fuzzy_and_ignore_case and self.ignore_case:
             raise ValueError(
@@ -82,6 +93,14 @@ class PropertyRef:
             raise ValueError(
                 f'Error setting PropertyRef "{self.name}": one_to_many cannot be used together with '
                 "`ignore_case` or `fuzzy_and_ignore_case`.",
+            )
+
+        if self.starts_with and (
+            self.ignore_case or self.fuzzy_and_ignore_case or self.one_to_many
+        ):
+            raise ValueError(
+                f'Error setting PropertyRef "{self.name}": starts_with cannot be used together with '
+                "`ignore_case`, `fuzzy_and_ignore_case`, or `one_to_many`.",
             )
 
     def _parameterize_name(self) -> str:
