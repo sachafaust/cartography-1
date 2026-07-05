@@ -6,6 +6,12 @@
 - Finding 4 — the Identity Center role matcher now uses an index-backed `STARTS WITH` on `AWSRole.name` plus an exact match on `AWSRole.path` via the new `PropertyRef(starts_with=True)` option, replacing the non-indexable `CONTAINS` on `arn`. Verified plan: `NodeIndexSeekByRange`; measured 0.04 s vs 27 s for 50k roles x 1k permission sets on the exact generated clause shape (~670x).
 
 Findings 1 and 5 remain proposals.
+
+**Post-implementation validation (same environment as the before-numbers):**
+- Full test suite green: 371 unit + 492 integration tests pass against `neo4j:5.15.0-community`, with the whole integration suite sharing one process — i.e., exercising the memoized `ensure_indexes` path the same way a real sync does.
+- `bench_ensure_indexes.py` after: steady-state `ensure_indexes()` 23.4 ms → **~0.0 ms** per repeat call; repeated 25-item `load()` overhead 28.4 ms → 2.5 ms (the residual is per-call query building, not index DDL).
+- `bench_contains.py` clause shape after: `NodeIndexSeekByRange`, 0.04 s vs 27.0 s for 50k roles × 1k permission sets (~670x).
+- Honest caveat: the instrumented single-tenant demo sync only drops from 688 → 622 index statements because most schemas load once there; the win scales with how often the *same* schema is re-loaded (accounts × regions), which is where the thousands of repeat calls come from in production.
 **Scope:** Code-level optimizations only — no architectural changes to the sync model, data model, or query-generation design.
 **Grounding:** Every claim below was validated against a live Neo4j 5.15 community instance (the same image as `docker-compose.yml`) using the benchmark harness in [`benchmarks/`](benchmarks/), which exercises the *real* cartography code paths (`load()`, `GraphJob.from_node_schema()`, `run_write_query()`, the generated ingestion/cleanup Cypher) with the real `EC2InstanceSchema` data model. A full instrumented run of the repo's own `demo` sync (22 intel modules) was used to measure how the ingestion machinery behaves in an end-to-end sync.
 
