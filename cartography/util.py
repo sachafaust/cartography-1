@@ -152,6 +152,11 @@ def run_cleanup_job(
     # size (--cleanup-batch-size) takes precedence over it.
     configured_batch_size = get_configured_cleanup_batch_size()
     if configured_batch_size is not None:
+        logger.debug(
+            "Overriding iterationsize baked into cleanup job '%s' with configured cleanup batch size %d",
+            filename,
+            configured_batch_size,
+        )
         job.set_iterationsize(configured_batch_size)
     job.merge_parameters(common_job_parameters or {})
     job.run(neo4j_session)

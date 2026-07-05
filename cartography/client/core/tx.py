@@ -525,6 +525,11 @@ def clear_ensure_indexes_cache() -> None:
     its CREATE INDEX statements. Intended for tests and long-running processes that recreate their
     database between syncs.
     """
+    if _ensured_schemas:
+        logger.debug(
+            "Cleared ensure_indexes cache (%d schemas); index DDL will be re-issued on next load per schema.",
+            len(_ensured_schemas),
+        )
     _ensured_schemas.clear()
 
 

@@ -42,6 +42,13 @@ def set_cleanup_batch_size(batch_size: Optional[int]) -> None:
         raise ValueError(
             f"cleanup batch size must be a positive integer, got {batch_size}"
         )
+    if batch_size is not None and batch_size != _configured_cleanup_batch_size:
+        logger.info(
+            "Cleanup batch size set to %d (default is %d). Iterative cleanup jobs will delete "
+            "up to this many items per transaction.",
+            batch_size,
+            DEFAULT_CLEANUP_BATCH_SIZE,
+        )
     _configured_cleanup_batch_size = batch_size
 
 

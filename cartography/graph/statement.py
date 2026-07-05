@@ -155,18 +155,37 @@ class GraphStatement:
                     self._run_noniterative
                 )
             except neo4j.exceptions.TransientError as e:
-                if e.code == _MEMORY_POOL_OOM_CODE and limit_size > min_limit:
-                    limit_size = max(limit_size // 2, min_limit)
-                    self.parameters["LIMIT_SIZE"] = limit_size
-                    logger.warning(
-                        f"Statement in job {self.parent_job_name} hit Neo4j's transaction memory limit; "
-                        f"retrying with a smaller batch (LIMIT_SIZE={limit_size}). This typically means the "
-                        f"nodes being deleted have very many relationships. If this repeats every sync, "
-                        f"consider lowering the cleanup batch size (e.g. via --cleanup-batch-size)."
+                if e.code == _MEMORY_POOL_OOM_CODE:
+                    if limit_size > min_limit:
+                        limit_size = max(limit_size // 2, min_limit)
+                        self.parameters["LIMIT_SIZE"] = limit_size
+                        logger.warning(
+                            f"Statement #{self.parent_job_sequence_num} in job '{self.parent_job_name}' hit "
+                            f"Neo4j's transaction memory limit; retrying with a smaller batch "
+                            f"(LIMIT_SIZE={limit_size}). This typically means the nodes being deleted have "
+                            f"very many relationships. If this repeats every sync, consider lowering the "
+                            f"cleanup batch size (e.g. via --cleanup-batch-size)."
+                        )
+                        continue
+                    logger.error(
+                        f"Statement #{self.parent_job_sequence_num} in job '{self.parent_job_name}' hit "
+                        f"Neo4j's transaction memory limit at LIMIT_SIZE={limit_size}, which is already the "
+                        f"minimum batch size; giving up. The nodes being deleted have too many relationships "
+                        f"for the current memory settings. To fix, raise the Neo4j server's "
+                        f"dbms.memory.transaction.total.max (or heap size), or lower --cleanup-batch-size "
+                        f"below {limit_size} if you set it there."
                     )
-                    continue
                 raise
 
+            if (
+                limit_size < self.iterationsize
+                and not summary.counters.contains_updates
+            ):
+                logger.info(
+                    f"Statement #{self.parent_job_sequence_num} in job '{self.parent_job_name}' completed "
+                    f"after reducing its batch size from {self.iterationsize} to {limit_size} due to "
+                    f"transaction memory pressure."
+                )
             if not summary.counters.contains_updates:
                 break
 
