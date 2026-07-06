@@ -3,12 +3,12 @@
     {
       "query": "MATCH (n:AWSAccount{foreign: true}) WHERE n.inscope = true AND n.lastupdated <> $UPDATE_TAG WITH n LIMIT $LIMIT_SIZE REMOVE n.foreign",
       "iterative": true,
-      "iterationsize": 100
+      "iterationsize": 1000
     },
     {
       "query": "MATCH (n:AWSAccount{foreign: true}) WHERE n.lastupdated <> $UPDATE_TAG WITH n LIMIT $LIMIT_SIZE DETACH DELETE (n)",
       "iterative": true,
-      "iterationsize": 100
+      "iterationsize": 1000
     }
   ],
   "name": "AWS accounts cleanup"

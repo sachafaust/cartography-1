@@ -291,6 +291,18 @@ class CLI:
             ),
         )
         parser.add_argument(
+            "--cleanup-batch-size",
+            type=int,
+            default=None,
+            help=(
+                "Number of items that iterative cleanup jobs delete per transaction. Defaults to 1000. "
+                "Larger values reduce the number of transactions (faster, especially against a remote Neo4j); "
+                "smaller values bound transaction memory. Lower this if cleanup jobs hit Neo4j's transaction "
+                "memory limit, e.g. when deleting nodes that have very many relationships. Cleanup jobs also "
+                "automatically halve their batch size on Neo4j transaction-memory errors down to a floor of 100."
+            ),
+        )
+        parser.add_argument(
             "--analysis-job-directory",
             type=str,
             default=None,

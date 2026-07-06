@@ -512,6 +512,27 @@ def load_graph_data(
         )
 
 
+# Schema classes whose indexes have already been ensured by this process. Index creation is
+# idempotent DDL, but re-issuing it on every load() call costs one autocommit round trip per
+# statement, which dominates small loads. A sync calls load() thousands of times (per node type,
+# per account, per region), so we only run the DDL the first time we see each schema class.
+_ensured_schemas: set[type] = set()
+
+
+def clear_ensure_indexes_cache() -> None:
+    """
+    Reset the ensure_indexes() memoization cache so that the next load() for each schema re-issues
+    its CREATE INDEX statements. Intended for tests and long-running processes that recreate their
+    database between syncs.
+    """
+    if _ensured_schemas:
+        logger.debug(
+            "Cleared ensure_indexes cache (%d schemas); index DDL will be re-issued on next load per schema.",
+            len(_ensured_schemas),
+        )
+    _ensured_schemas.clear()
+
+
 def ensure_indexes(
     neo4j_session: neo4j.Session,
     node_schema: CartographyNodeSchema,
@@ -523,9 +544,14 @@ def ensure_indexes(
 
     This ensures that every time we need to MATCH on a node to draw a relationship to it, the field used for the MATCH
     will be indexed, making the operation fast.
+
+    Index creation DDL runs once per node_schema class per process; subsequent calls are no-ops.
     :param neo4j_session: The neo4j session
     :param node_schema: The node_schema object to create indexes for.
     """
+    if type(node_schema) in _ensured_schemas:
+        return
+
     queries = build_create_index_queries(node_schema)
 
     for query in queries:
@@ -534,6 +560,7 @@ def ensure_indexes(
                 'Query provided to `ensure_indexes()` does not start with "CREATE INDEX IF NOT EXISTS".',
             )
         _run_index_query_with_retry(neo4j_session, query)
+    _ensured_schemas.add(type(node_schema))
 
 
 def ensure_indexes_for_matchlinks(
@@ -544,7 +571,12 @@ def ensure_indexes_for_matchlinks(
     Creates indexes for node fields if they don't exist for the given CartographyRelSchema object.
     This is only used for load_rels() where we match on and connect existing nodes.
     This is not used for CartographyNodeSchema objects.
+
+    Index creation DDL runs once per rel_schema class per process; subsequent calls are no-ops.
     """
+    if type(rel_schema) in _ensured_schemas:
+        return
+
     queries = build_create_index_queries_for_matchlink(rel_schema)
     logger.debug(f"CREATE INDEX queries for {rel_schema.rel_label}: {queries}")
     for query in queries:
@@ -553,6 +585,7 @@ def ensure_indexes_for_matchlinks(
                 'Query provided to `ensure_indexes_for_matchlinks()` does not start with "CREATE INDEX IF NOT EXISTS".',
             )
         _run_index_query_with_retry(neo4j_session, query)
+    _ensured_schemas.add(type(rel_schema))
 
 
 def load(

@@ -48,7 +48,9 @@ import cartography.intel.snipeit
 import cartography.intel.spacelift
 import cartography.intel.tailscale
 import cartography.intel.trivy
+from cartography.client.core.tx import clear_ensure_indexes_cache
 from cartography.config import Config
+from cartography.graph.job import set_cleanup_batch_size
 from cartography.stats import set_stats_client
 from cartography.util import STATUS_FAILURE
 from cartography.util import STATUS_SUCCESS
@@ -147,6 +149,10 @@ class Sync:
         :param config: Configuration for the sync run.
         """
         logger.info("Starting sync with update tag '%d'", config.update_tag)
+        # Index-creation DDL is memoized per schema for the duration of one sync run. Reset the
+        # cache here so long-running processes that run multiple syncs (possibly against different
+        # or recreated databases) re-ensure indexes at the start of each run.
+        clear_ensure_indexes_cache()
         with neo4j_driver.session(database=config.neo4j_database) as neo4j_session:
             for stage_name, stage_func in self._stages.items():
                 logger.info("Starting sync stage '%s'", stage_name)
@@ -237,6 +243,9 @@ def run_with_config(sync: Sync, config: Union[Config, argparse.Namespace]) -> in
     :type config: cartography.config.Config
     :param config: The configuration to use to run the sync task.
     """
+    # Apply the operator-configured cleanup batch size, if any (--cleanup-batch-size).
+    set_cleanup_batch_size(getattr(config, "cleanup_batch_size", None))
+
     # Initialize statsd client if enabled
     if config.statsd_enabled:
         set_stats_client(

@@ -2,12 +2,12 @@
   "statements": [{
     "query": "MATCH (:OCITenancy{ocid: $OCI_TENANCY_ID})-[:RESOURCE]->(n:OCIGroup) WHERE n.lastupdated <> $UPDATE_TAG WITH n LIMIT $LIMIT_SIZE DETACH DELETE (n)",
     "iterative": true,
-    "iterationsize": 100
+    "iterationsize": 1000
   },
   {
     "query": "MATCH (:OCITenancy{ocid: $OCI_TENANCY_ID})-[r:RESOURCE]->(:OCIGroup) WHERE r.lastupdated <> $UPDATE_TAG WITH r LIMIT $LIMIT_SIZE DELETE (r)",
     "iterative": true,
-    "iterationsize": 100
+    "iterationsize": 1000
   }],
   "name": "cleanup OCIGroup",
   "comment":"Copyright (c) 2020, Oracle and/or its affiliates."

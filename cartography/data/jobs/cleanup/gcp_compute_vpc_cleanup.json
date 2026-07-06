@@ -3,7 +3,7 @@
     {
       "query": "MATCH (:GCPInstance)-[r:MEMBER_OF_GCP_VPC]->(:GCPVpc) WHERE r.lastupdated <> $UPDATE_TAG WITH r LIMIT $LIMIT_SIZE DELETE (r)",
       "iterative": true,
-      "iterationsize": 100,
+      "iterationsize": 1000,
       "__comment__": "Remove GCP Instance-to-VPC relationships that are out of date."
     }
   ],

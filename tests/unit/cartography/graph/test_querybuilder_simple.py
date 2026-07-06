@@ -7,6 +7,9 @@ from tests.data.graph.querybuilder.sample_models.fake_emps_githubusers import (
 from tests.data.graph.querybuilder.sample_models.fake_emps_githubusers_fuzzy import (
     FakeEmp2Schema,
 )
+from tests.data.graph.querybuilder.sample_models.fake_emps_githubusers_starts_with import (
+    FakeEmp3Schema,
+)
 from tests.data.graph.querybuilder.sample_models.simple_node import SimpleNodeSchema
 from tests.data.graph.querybuilder.sample_models.simple_node import (
     SimpleNodeWithSubResourceSchema,
@@ -140,6 +143,45 @@ def test_build_ingestion_query_fuzzy_case_insensitive():
             OPTIONAL MATCH (n0:GitHubUser)
             WHERE
                 toLower(n0.username) CONTAINS toLower(item.github_username)
+            WITH i, item, n0 WHERE n0 IS NOT NULL
+            MERGE (i)-[r0:IDENTITY_GITHUB]->(n0)
+            ON CREATE SET r0.firstseen = timestamp()
+            SET
+                r0._module_name = "{module_name}",
+                r0._module_version = "{module_version}",
+                r0.lastupdated = $lastupdated
+        }}
+    """
+
+    # Assert: compare query outputs while ignoring leading whitespace.
+    actual_query = remove_leading_whitespace_and_empty_lines(query)
+    expected_query = remove_leading_whitespace_and_empty_lines(expected)
+    assert actual_query == expected_query
+
+
+def test_build_ingestion_query_starts_with():
+    module_version = _get_cartography_version()
+    module_name = _get_module_from_schema(FakeEmp3Schema())
+
+    query = build_ingestion_query(FakeEmp3Schema())
+
+    expected = f"""
+        UNWIND $DictList AS item
+            MERGE (i:FakeEmployee3{{id: item.id}})
+            ON CREATE SET i.firstseen = timestamp()
+            SET
+                i._module_name = "{module_name}",
+                i._module_version = "{module_version}",
+                i.lastupdated = $lastupdated,
+                i.email = item.email,
+                i.github_username_prefix = item.github_username_prefix
+
+        WITH i, item
+        CALL {{
+            WITH i, item
+            OPTIONAL MATCH (n0:GitHubUser)
+            WHERE
+                n0.username STARTS WITH item.github_username_prefix
             WITH i, item, n0 WHERE n0 IS NOT NULL
             MERGE (i)-[r0:IDENTITY_GITHUB]->(n0)
             ON CREATE SET r0.firstseen = timestamp()

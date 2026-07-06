@@ -3,7 +3,7 @@
     {
       "query": "MATCH (:AWSAccount{id: $AWS_ID})-[:RESOURCE]->(s:S3Bucket) WHERE s.anonymous_access IS NOT NULL\n WITH s LIMIT $LIMIT_SIZE\nREMOVE s.anonymous_access, s.anonymous_actions",
       "iterative": true,
-      "iterationsize": 100
+      "iterationsize": 1000
     }
   ],
   "name": "AWS S3 Exposure Details"

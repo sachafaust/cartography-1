@@ -117,20 +117,21 @@ def transform_permission_sets(
     region: str,
 ) -> list[dict[str, Any]]:
     """
-    Transform permission sets by adding the RoleHint based on region.
+    Transform permission sets by adding the role name prefix and IAM path used to match the
+    AWSReservedSSO_* roles that AWS provisions for the permission set in each assigned account.
 
-    AWS SSO roles in us-east-1 don't include region in the ARN path,
-    but roles in other regions do: /aws-reserved/sso.amazonaws.com/{region}/AWSReservedSSO_*
+    Provisioned roles are always named `AWSReservedSSO_{PermissionSetName}_{random_suffix}`.
+    AWS SSO roles in us-east-1 don't include region in the IAM path,
+    but roles in other regions do: /aws-reserved/sso.amazonaws.com/{region}/
     """
     for permission_set in permission_sets:
+        permission_set["RoleNamePrefix"] = (
+            f"AWSReservedSSO_{permission_set.get('Name')}_"
+        )
         if region == "us-east-1":
-            permission_set["RoleHint"] = (
-                f":role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_{permission_set.get('Name')}"
-            )
+            permission_set["RolePath"] = "/aws-reserved/sso.amazonaws.com/"
         else:
-            permission_set["RoleHint"] = (
-                f":role/aws-reserved/sso.amazonaws.com/{region}/AWSReservedSSO_{permission_set.get('Name')}"
-            )
+            permission_set["RolePath"] = f"/aws-reserved/sso.amazonaws.com/{region}/"
     return permission_sets
 
 
@@ -614,7 +615,7 @@ def _sync_permission_sets(
     """
     try:
         permission_sets = get_permission_sets(boto3_session, instance_arn, region)
-        # Transform permission sets to add RoleHint for fuzzy matching to IAM roles
+        # Transform permission sets to add the role name prefix + path used to match provisioned IAM roles
         permission_sets = transform_permission_sets(permission_sets, region)
         load_permission_sets(
             neo4j_session,

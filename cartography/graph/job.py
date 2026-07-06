@@ -21,6 +21,55 @@ from cartography.models.core.relationships import CartographyRelSchema
 
 logger = logging.getLogger(__name__)
 
+# Default number of items processed per transaction by iterative cleanup statements. Larger batches
+# mean fewer transactions (faster, especially over high-latency connections); smaller batches bound
+# transaction memory when deleting nodes that have very many relationships.
+DEFAULT_CLEANUP_BATCH_SIZE = 1000
+
+# Operator override, set from config (--cleanup-batch-size) via set_cleanup_batch_size().
+_configured_cleanup_batch_size: Optional[int] = None
+
+
+def set_cleanup_batch_size(batch_size: Optional[int]) -> None:
+    """
+    Set a process-wide override for the cleanup batch size (iterationsize) used by cleanup jobs.
+    Called during sync startup when the operator passes --cleanup-batch-size; also applied to the
+    packaged JSON cleanup jobs via cartography.util.run_cleanup_job.
+    :param batch_size: The batch size to use, or None to fall back to DEFAULT_CLEANUP_BATCH_SIZE.
+    """
+    global _configured_cleanup_batch_size
+    if batch_size is not None and batch_size <= 0:
+        raise ValueError(
+            f"cleanup batch size must be a positive integer, got {batch_size}"
+        )
+    if batch_size is not None and batch_size != _configured_cleanup_batch_size:
+        logger.info(
+            "Cleanup batch size set to %d (default is %d). Iterative cleanup jobs will delete "
+            "up to this many items per transaction.",
+            batch_size,
+            DEFAULT_CLEANUP_BATCH_SIZE,
+        )
+    _configured_cleanup_batch_size = batch_size
+
+
+def get_cleanup_batch_size() -> int:
+    """
+    The effective cleanup batch size: the operator-configured value if set, else the default.
+    """
+    return (
+        _configured_cleanup_batch_size
+        if _configured_cleanup_batch_size is not None
+        else DEFAULT_CLEANUP_BATCH_SIZE
+    )
+
+
+def get_configured_cleanup_batch_size() -> Optional[int]:
+    """
+    The operator-configured cleanup batch size, or None if the operator did not set one.
+    Used to decide whether to override the iterationsize baked into packaged JSON cleanup jobs.
+    """
+    return _configured_cleanup_batch_size
+
 
 def _get_identifiers(template: string.Template) -> List[str]:
     """
@@ -92,6 +141,17 @@ class GraphJob:
         for s in self.statements:
             s.merge_parameters(parameters)
 
+    def set_iterationsize(self, iterationsize: int) -> None:
+        """
+        Override the iterationsize (and its LIMIT_SIZE query parameter) of every iterative
+        statement in this job. Used to apply the operator-configured cleanup batch size to
+        jobs whose statements were loaded from packaged JSON files with a baked-in value.
+        """
+        for s in self.statements:
+            if s.iterative:
+                s.iterationsize = iterationsize
+                s.parameters["LIMIT_SIZE"] = iterationsize
+
     def run(self, neo4j_session: neo4j.Session) -> None:
         """
         Run the job. This will execute all statements sequentially.
@@ -141,14 +201,19 @@ class GraphJob:
         cls,
         node_schema: CartographyNodeSchema,
         parameters: Dict[str, Any],
-        iterationsize: int = 100,
+        iterationsize: Optional[int] = None,
     ) -> "GraphJob":
         """
         Create a cleanup job from a CartographyNodeSchema object.
         For a given node, the fields used in the node_schema.sub_resource_relationship.target_node_node_matcher.keys()
         must be provided as keys and values in the params dict.
-        :param iterationsize: The number of items to process in each iteration. Defaults to 100.
+        :param iterationsize: The number of items to process in each iteration. Defaults to the configured cleanup
+        batch size (--cleanup-batch-size, falling back to DEFAULT_CLEANUP_BATCH_SIZE = 1000), which measures ~2x
+        faster than 100 while staying well within default transaction memory limits. Lower this for node types that
+        are unusually dense (many relationships per node) if DETACH DELETE transactions run into memory limits.
         """
+        if iterationsize is None:
+            iterationsize = get_cleanup_batch_size()
         queries: List[str] = build_cleanup_queries(node_schema)
 
         expected_param_keys: Set[str] = get_parameters(queries)
@@ -189,7 +254,7 @@ class GraphJob:
         sub_resource_label: str,
         sub_resource_id: str,
         update_tag: int,
-        iterationsize: int = 100,
+        iterationsize: Optional[int] = None,
     ) -> "GraphJob":
         """
         Create a cleanup job from a CartographyRelSchema object (specifically, a MatchLink).
@@ -199,8 +264,11 @@ class GraphJob:
         - For a given rel_schema, the fields used in the rel_schema.properties._sub_resource_label.name and
         rel_schema.properties._sub_resource_id.name must be provided as keys and values in the params dict.
         - The rel_schema must have a source_node_matcher and target_node_matcher.
-        :param iterationsize: The number of items to process in each iteration. Defaults to 100.
+        :param iterationsize: The number of items to process in each iteration. Defaults to the configured cleanup
+        batch size (--cleanup-batch-size, falling back to DEFAULT_CLEANUP_BATCH_SIZE = 1000).
         """
+        if iterationsize is None:
+            iterationsize = get_cleanup_batch_size()
         cleanup_link_query = build_cleanup_query_for_matchlink(rel_schema)
         logger.debug(f"Cleanup query: {cleanup_link_query}")
 
